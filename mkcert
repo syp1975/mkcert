@@ -1,0 +1,112 @@
+#!/bin/bash
+set -f 
+set -e
+
+if [ -z "$1" ]; then
+  echo "Usage:"
+  echo "$(basename $0) <domain> [...domain|ip]"
+  echo "Generates a self-signed certificate for the given list of domain(s)/ip(s)"
+  echo "Visit https://github.com/syp1975/mkcert for more information."
+  echo "Released under the MIT license."
+  exit 1
+fi
+
+# save current environment
+CURENV=$(declare -p -x)
+
+# default values
+DAYS=730
+BITS=2048
+ORGANIZATION="${ORGANIZATION-$(pwd)}"
+COUNTRY=US
+STATE=CA
+LOCALITY=Home
+CA_DAYS=3650
+CA_EXPIRATION=30
+CA=CA
+
+# source variables from files
+[ -r /etc/mkcert ] && . /etc/mkcert
+[ -r "$ORGANIZATION/.mkcert" ] && . "$ORGANIZATION/.mkcert"
+[ -r "$ENV" ] && . "$ENV"
+
+# restore environment
+eval "$CURENV"
+
+# create organization folder
+[ -d "$ORGANIZATION" ] || mkdir -p "$ORGANIZATION"
+pushd "$ORGANIZATION" > /dev/null
+ORG=$(basename "$(pwd)")
+
+# generate CA root certificate
+unset CAPWDIN CAPWDOUT
+if [ -n "$CA_PASSWORD" ]; then
+  CAPWDOUT="-${CA_ENCRYPTION-des3} -passout $CA_PASSWORD"
+  CAPWDIN="-passin $CA_PASSWORD"
+elif [ -n "$CA_ENCRYPTION" ]; then
+  CAPWDOUT="-${CA_ENCRYPTION}"
+fi
+[ -f "$CA.key" ] || openssl genrsa $CAPWDOUT -out "$CA.key" $BITS
+[ -f "$CA.crt" ] || openssl req -x509 -new -nodes -key "$CA.key" $CAPWDIN -sha256 -out "$CA.crt" -days $CA_DAYS -subj "/CN=$ORG Root CA/C=$COUNTRY/ST=$STATE/L=$LOCALITY/O=$ORG"
+
+# CA certificate expiration warning
+openssl x509 -checkend $((CA_EXPIRATION*86400)) -in "$CA.crt" > /dev/null || {
+  if openssl x509 -checkend 1 -in "$CA.crt" > /dev/null; then
+    echo "Warning: root CA certificate WILL EXPIRE soon."
+  else
+    echo "Warning: root CA certificate HAS EXPIRED."
+  fi
+}
+
+# check if certificate is due for renewal
+DOMAIN="$1"; shift
+[ -n "$RENEW" ] && [ -f "$DOMAIN.key" ] && [ -f "$DOMAIN.crt" ] && openssl x509 -checkend $((RENEW*86400)) -in "$DOMAIN.crt" > /dev/null && {
+  echo "Certificate not due for renewal."
+  exit 0
+}
+
+# domain certificate config
+cat > "$DOMAIN.conf" << EOF
+[req]
+default_md=sha256
+prompt=no
+req_extensions=req_ext
+distinguished_name=req_distinguished_name
+[req_distinguished_name]
+CN=$DOMAIN
+O=$ORG
+[req_ext]
+keyUsage=critical,digitalSignature,keyEncipherment
+extendedKeyUsage=critical,serverAuth,clientAuth
+subjectAltName=critical,@alt_names
+[alt_names]
+DNS.1=$DOMAIN
+EOF
+
+# add additional domains or IP addresses
+dns=1
+ip=0
+while [ -n "$1" ]; do
+  # check if it's an IP address
+  if [[ "$1" =~ [0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3}\.[0-9]{1,3} ]]; then
+    ip=$((ip+1))
+    echo "IP.$ip=$1" >> "$DOMAIN.conf"
+  else
+    dns=$((dns+1))
+    echo "DNS.$dns=$1" >> "$DOMAIN.conf"
+  fi
+  shift
+done
+
+# generate signed domain certificate
+openssl genrsa -out "$DOMAIN.key" $BITS
+openssl req -new -nodes -key "$DOMAIN.key" -out "$DOMAIN.csr" -config "$DOMAIN.conf"
+openssl x509 -req -in "$DOMAIN.csr" -CA CA.crt -CAkey CA.key $CAPWDIN -CAcreateserial -out "$DOMAIN.crt" -days $DAYS -sha256 -extfile "$DOMAIN.conf" -extensions req_ext
+
+echo Cert has been saved as:
+echo $ORGANIZATION/$DOMAIN.key
+echo $ORGANIZATION/$DOMAIN.crt
+
+set +f
+set +e
+popd &> /dev/null
