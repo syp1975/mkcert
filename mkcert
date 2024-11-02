@@ -3,8 +3,7 @@ set -f
 set -e
 
 if [ -z "$1" ]; then
-  echo "Usage:"
-  echo "$(basename $0) <domain> [...domain|ip]"
+  echo "Usage: $(basename $0) <domain> [...domain|ip]"
   echo "Generates a self-signed certificate for the given list of domain(s)/ip(s)"
   echo "Visit https://github.com/syp1975/mkcert for more information."
   echo "Released under the MIT license."

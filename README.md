@@ -19,9 +19,9 @@ Generate a self-signed certificate for the given domain(s) or IP address(es).
 mkcert example.com *.example.com
 
 #creates
-#/etc/ssl/my_home/CA.key (password protected),
-#/etc/ssl/my_home/CA.crt
-#/etc/ssl/my_home/my_router.home.key
+#/etc/ssl/my_home/CA.key (password protected, password is stored in /etc/ssl/my_home/.password),
+#/etc/ssl/my_home/CA.crt (copy this file to your computer and install it as trusted root CA)
+#/etc/ssl/my_home/my_router.home.key (use this cert on your web server)
 #/etc/ssl/my_home/my_router.home.crt
 DAYS=1825 ORGANIZATION=/etc/ssl/my_home CA_PASSWORD=file:.password mkcert my_router.home 192.168.1.1
 ```
@@ -37,7 +37,7 @@ Pass options to the script using environment variables.
   Defaults to the current folder.<br>
   Folder will be created if it does not exist.<br>
   Folder name will be used as the organization name.
-- **`CA`**: name of the root CA certificate files (CA)
+- **`CA`**: name of the root CA certificate files (CA).
 - **`CA_PASSWORD`**: password to access the private key of the root CA certificate.<br>
   If not set, a password will be prompted when needed.<br>
   Examples:
